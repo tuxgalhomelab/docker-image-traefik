@@ -11,6 +11,7 @@ RELEASE_TAG_PACKAGE_NAME="traefik"
 UPSTREAM_PACKAGE_NAME="Traefik"
 UPSTREAM_VERSION_CONFIG_KEY="TRAEFIK_VERSION"
 UPSTREAM_GIT_REPO="https://github.com/traefik/traefik"
+GIT_REPO_TAGS_CUSTOM_FILTERING_REGEX='^v.+\-rc.+$'
 
 TEST_TYPE="background"
 TEST_CONTAINER_TYPE="traefik"
@@ -21,15 +22,7 @@ current_upstream_version() {
 }
 
 latest_upstream_version() {
-    git -c 'versionsort.suffix=-' ls-remote \
-        --exit-code \
-        --refs \
-        --sort='version:refname' \
-        --tags \
-        "${UPSTREAM_GIT_REPO:?}" | \
-        cut --delimiter='/' --fields=3 | \
-        sort --version-sort --reverse | \
-        head -1
+    git_remote_repo_latest_tag "${UPSTREAM_GIT_REPO:?}"
 }
 
 update_latest_upstream_version() {
