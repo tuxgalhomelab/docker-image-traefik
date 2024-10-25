@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -E -e -o pipefail
+
+# Add repo specific metadata here.
+
+BASE_IMAGE_CONFIG_KEY_PREFIX="BASE_IMAGE"
+
+RELEASE_PACKAGE_NAME="Traefik"
+RELEASE_TAG_PACKAGE_NAME="traefik"
+
+UPSTREAM_PACKAGE_NAME="Traefik"
+UPSTREAM_VERSION_CONFIG_KEY="TRAEFIK_VERSION"
+UPSTREAM_GIT_REPO="https://github.com/traefik/traefik"
+
+TEST_TYPE="background"
+TEST_CONTAINER_TYPE="traefik"
+TEST_CONTAINER_START_WAIT_SECONDS="5"
+
+current_upstream_version() {
+    get_config_arg ${UPSTREAM_VERSION_CONFIG_KEY:?}
+}
+
+latest_upstream_version() {
+    git -c 'versionsort.suffix=-' ls-remote \
+        --exit-code \
+        --refs \
+        --sort='version:refname' \
+        --tags \
+        "${UPSTREAM_GIT_REPO:?}" | \
+        cut --delimiter='/' --fields=3 | \
+        sort --version-sort --reverse | \
+        head -1
+}
+
+update_latest_upstream_version() {
+    local cur_ver="${1:?}"
+    local latest_ver="${2:?}"
+    echo "Updating ${UPSTREAM_PACKAGE_NAME:?} ${UPSTREAM_VERSION_CONFIG_KEY:?} '${cur_ver:?}' -> '${latest_ver:?}'"
+    set_config_arg "${UPSTREAM_VERSION_CONFIG_KEY:?}" "${latest_ver:?}"
+    git add ${ARGS_FILE:?}
+}
+
+package_current_release_version() {
+    current_upstream_version
+}
+
+test_start_container() {
+    local container_name="${1:?}"
+
+    docker run \
+        --user root \
+        --name ${container_name:?} \
+        --detach \
+        --rm \
+        --volume "${PWD:?}/metadata/dummy-http-server.sh:/opt/bin/dummy-http-server:ro" \
+        ${IMAGE:?}
+}
+
+test_image_after_container_startup() {
+    local container_name="${1:?}"
+    local ip="$(container_ip "${container_name:?}")"
+    docker exec \
+        --user root \
+        "${container_name:?}" \
+        homelab install netcat-openbsd
+    docker exec \
+        --detach \
+        --interactive \
+        --tty \
+        "${container_name:?}" \
+        dummy-http-server localhost 8081
+    # Wait for the dummy-http-server to start.
+    sleep 2
+    test_http_endpoint "${container_name:?}" http ${ip:?} 8080
+}
