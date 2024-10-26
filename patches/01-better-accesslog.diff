@@ -1,0 +1,66 @@
+diff -u -r a/traefik/pkg/middlewares/accesslog/logger_formatters.go b/traefik/pkg/middlewares/accesslog/logger_formatters.go
+--- a/traefik/pkg/middlewares/accesslog/logger_formatters.go	2024-10-25 16:48:18.577027165 -0700
++++ b/traefik/pkg/middlewares/accesslog/logger_formatters.go	2024-10-25 17:55:22.891395979 -0700
+@@ -10,7 +10,7 @@
+ 
+ // default format for time presentation.
+ const (
+-	commonLogTimeFormat = "02/Jan/2006:15:04:05 -0700"
++	commonLogTimeFormat = "2006-01-02T15:04:05.000Z0700"
+ 	defaultValue        = "-"
+ )
+ 
+@@ -21,11 +21,18 @@
+ func (f *CommonLogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+ 	b := &bytes.Buffer{}
+ 
++	// promtail spams the logs excessively, so trim it down.
++	clientUsername := toLog(entry.Data, ClientUsername, defaultValue, false).(string)
++	requestCount := toLog(entry.Data, RequestCount, defaultValue, true).(uint64)
++	if clientUsername == "promtail" && requestCount % 100 != 0 {
++		return b.Bytes(), nil
++	}
++
+ 	timestamp := defaultValue
+-	if v, ok := entry.Data[StartUTC]; ok {
+-		timestamp = v.(time.Time).Format(commonLogTimeFormat)
+-	} else if v, ok := entry.Data[StartLocal]; ok {
++	if v, ok := entry.Data[StartLocal]; ok {
+ 		timestamp = v.(time.Time).Local().Format(commonLogTimeFormat)
++	} else if v, ok := entry.Data[StartUTC]; ok {
++		timestamp = v.(time.Time).Format(commonLogTimeFormat)
+ 	}
+ 
+ 	var elapsedMillis int64
+@@ -33,21 +40,22 @@
+ 		elapsedMillis = v.(time.Duration).Nanoseconds() / 1000000
+ 	}
+ 
+-	_, err := fmt.Fprintf(b, "%s - %s [%s] \"%s %s %s\" %v %v %s %s %v %s %s %dms\n",
+-		toLog(entry.Data, ClientHost, defaultValue, false),
+-		toLog(entry.Data, ClientUsername, defaultValue, false),
++	_, err := fmt.Fprintf(b, "[%s] - %d - %v %dms - %s %s %s %s - %s %s %s %s - %v %s %s\n",
+ 		timestamp,
++		requestCount,
++		toLog(entry.Data, DownstreamStatus, defaultValue, true),
++		elapsedMillis,
++		toLog(entry.Data, RequestHost, defaultValue, false),
+ 		toLog(entry.Data, RequestMethod, defaultValue, false),
+ 		toLog(entry.Data, RequestPath, defaultValue, false),
+ 		toLog(entry.Data, RequestProtocol, defaultValue, false),
+-		toLog(entry.Data, DownstreamStatus, defaultValue, true),
+-		toLog(entry.Data, DownstreamContentSize, defaultValue, true),
++		toLog(entry.Data, ClientHost, defaultValue, false),
++		clientUsername,
+ 		toLog(entry.Data, "request_Referer", `"-"`, true),
+ 		toLog(entry.Data, "request_User-Agent", `"-"`, true),
+-		toLog(entry.Data, RequestCount, defaultValue, true),
+-		toLog(entry.Data, RouterName, `"-"`, true),
+-		toLog(entry.Data, ServiceURL, `"-"`, true),
+-		elapsedMillis)
++		toLog(entry.Data, DownstreamContentSize, defaultValue, true),
++		toLog(entry.Data, RouterName, `"-"`, false),
++		toLog(entry.Data, ServiceURL, `"-"`, false))
+ 
+ 	return b.Bytes(), err
+ }
