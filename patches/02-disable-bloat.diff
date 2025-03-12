@@ -1,7 +1,7 @@
 diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
---- a/traefik/cmd/traefik/traefik.go	2024-10-28 19:05:26.338161989 -0700
-+++ b/traefik/cmd/traefik/traefik.go	2024-10-28 19:23:01.574532436 -0700
-@@ -181,19 +181,6 @@
+--- a/traefik/cmd/traefik/traefik.go	2025-02-25 02:04:04.000000000 -0800
++++ b/traefik/cmd/traefik/traefik.go	2025-03-11 18:26:17.069686433 -0700
+@@ -185,19 +185,6 @@
  	// ACME
  
  	tlsManager := traefiktls.NewManager()
@@ -13,15 +13,15 @@ diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
 -		return nil, err
 -	}
 -
--	acmeProviders := initACMEProvider(staticConfiguration, &providerAggregator, tlsManager, httpChallengeProvider, tlsChallengeProvider)
+-	acmeProviders := initACMEProvider(staticConfiguration, providerAggregator, tlsManager, httpChallengeProvider, tlsChallengeProvider, routinesPool)
 -
 -	// Tailscale
 -
--	tsProviders := initTailscaleProviders(staticConfiguration, &providerAggregator)
+-	tsProviders := initTailscaleProviders(staticConfiguration, providerAggregator)
  
  	// Observability
  
-@@ -291,8 +278,7 @@
+@@ -298,8 +285,7 @@
  	}
  
  	dialerManager := tcp.NewDialerManager(spiffeX509Source)
@@ -31,7 +31,7 @@ diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
  
  	// Router factory
  
-@@ -345,39 +331,6 @@
+@@ -352,39 +338,6 @@
  		})
  	}
  
@@ -71,7 +71,7 @@ diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
  	return server.NewServer(routinesPool, serverEntryPointsTCP, serverEntryPointsUDP, watcher, observabilityMgr), nil
  }
  
-@@ -622,12 +575,6 @@
+@@ -629,12 +582,6 @@
  		logger.Info().Msg(`Help us improve Traefik by leaving this feature on :)`)
  		logger.Info().Msg(`More details on: https://doc.traefik.io/traefik/contributing/data-collection/`)
  		collect(staticConfiguration)
