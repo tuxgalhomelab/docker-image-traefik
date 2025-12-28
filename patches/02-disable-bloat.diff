@@ -1,10 +1,37 @@
-diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
---- a/traefik/cmd/traefik/traefik.go	2025-02-25 02:04:04.000000000 -0800
-+++ b/traefik/cmd/traefik/traefik.go	2025-03-11 18:26:17.069686433 -0700
-@@ -185,19 +185,6 @@
- 	// ACME
+diff -u -r -N a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
+--- a/traefik/cmd/traefik/traefik.go	2025-12-27 20:36:53.613200436 -0800
++++ b/traefik/cmd/traefik/traefik.go	2025-12-27 20:52:10.510425953 -0800
+@@ -16,7 +16,6 @@
+ 	"time"
  
- 	tlsManager := traefiktls.NewManager()
+ 	"github.com/coreos/go-systemd/v22/daemon"
+-	"github.com/go-acme/lego/v4/challenge"
+ 	gokitmetrics "github.com/go-kit/kit/metrics"
+ 	"github.com/rs/zerolog/log"
+ 	"github.com/sirupsen/logrus"
+@@ -35,9 +34,7 @@
+ 	"github.com/traefik/traefik/v3/pkg/observability/metrics"
+ 	"github.com/traefik/traefik/v3/pkg/observability/tracing"
+ 	otypes "github.com/traefik/traefik/v3/pkg/observability/types"
+-	"github.com/traefik/traefik/v3/pkg/provider/acme"
+ 	"github.com/traefik/traefik/v3/pkg/provider/aggregator"
+-	"github.com/traefik/traefik/v3/pkg/provider/tailscale"
+ 	"github.com/traefik/traefik/v3/pkg/provider/traefik"
+ 	"github.com/traefik/traefik/v3/pkg/proxy"
+ 	"github.com/traefik/traefik/v3/pkg/proxy/httputil"
+@@ -121,8 +118,6 @@
+ 
+ 	checkNewVersion(staticConfiguration)
+ 
+-	stats(staticConfiguration)
+-
+ 	svr, err := setupServer(staticConfiguration)
+ 	if err != nil {
+ 		return err
+@@ -188,20 +183,6 @@
+ 	tlsManager := traefiktls.NewManager(staticConfiguration.OCSP)
+ 	routinesPool.GoCtx(tlsManager.Run)
+ 
 -	httpChallengeProvider := acme.NewChallengeHTTP()
 -
 -	tlsChallengeProvider := acme.NewChallengeTLSALPN()
@@ -18,10 +45,11 @@ diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
 -	// Tailscale
 -
 -	tsProviders := initTailscaleProviders(staticConfiguration, providerAggregator)
- 
+-
  	// Observability
  
-@@ -298,8 +285,7 @@
+ 	metricRegistries := registerMetricClients(staticConfiguration.Metrics)
+@@ -301,8 +282,7 @@
  	}
  
  	dialerManager := tcp.NewDialerManager(spiffeX509Source)
@@ -31,7 +59,25 @@ diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
  
  	// Router factory
  
-@@ -352,39 +338,6 @@
+@@ -320,17 +300,6 @@
+ 		"internal",
+ 	)
+ 
+-	// TLS
+-	watcher.AddListener(func(conf dynamic.Configuration) {
+-		ctx := context.Background()
+-		tlsManager.UpdateConfigs(ctx, conf.TLS.Stores, conf.TLS.Options, conf.TLS.Certificates)
+-
+-		gauge := metricsRegistry.TLSCertsNotAfterTimestampGauge()
+-		for _, certificate := range tlsManager.GetServerCertificates() {
+-			appendCertMetric(gauge, certificate)
+-		}
+-	})
+-
+ 	// Metrics
+ 	watcher.AddListener(func(_ dynamic.Configuration) {
+ 		metricsRegistry.ConfigReloadsCounter().Add(1)
+@@ -358,53 +327,9 @@
  		})
  	}
  
@@ -71,16 +117,107 @@ diff -u -r a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
  	return server.NewServer(routinesPool, serverEntryPointsTCP, serverEntryPointsUDP, watcher, observabilityMgr), nil
  }
  
-@@ -629,12 +582,6 @@
- 		logger.Info().Msg(`Help us improve Traefik by leaving this feature on :)`)
- 		logger.Info().Msg(`More details on: https://doc.traefik.io/traefik/contributing/data-collection/`)
- 		collect(staticConfiguration)
+-func getHTTPChallengeHandler(acmeProviders []*acme.Provider, httpChallengeProvider http.Handler) http.Handler {
+-	var acmeHTTPHandler http.Handler
+-	for _, p := range acmeProviders {
+-		if p != nil && p.HTTPChallenge != nil {
+-			acmeHTTPHandler = httpChallengeProvider
+-			break
+-		}
+-	}
+-	return acmeHTTPHandler
+-}
+-
+ func getDefaultsEntrypoints(staticConfiguration *static.Configuration) []string {
+ 	var defaultEntryPoints []string
+ 
+@@ -450,64 +375,6 @@
+ 	}
+ }
+ 
+-// initACMEProvider creates and registers acme.Provider instances corresponding to the configured ACME certificate resolvers.
+-func initACMEProvider(c *static.Configuration, providerAggregator *aggregator.ProviderAggregator, tlsManager *traefiktls.Manager, httpChallengeProvider, tlsChallengeProvider challenge.Provider, routinesPool *safe.Pool) []*acme.Provider {
+-	localStores := map[string]*acme.LocalStore{}
+-
+-	var resolvers []*acme.Provider
+-	for name, resolver := range c.CertificatesResolvers {
+-		if resolver.ACME == nil {
+-			continue
+-		}
+-
+-		if localStores[resolver.ACME.Storage] == nil {
+-			localStores[resolver.ACME.Storage] = acme.NewLocalStore(resolver.ACME.Storage, routinesPool)
+-		}
+-
+-		p := &acme.Provider{
+-			Configuration:         resolver.ACME,
+-			Store:                 localStores[resolver.ACME.Storage],
+-			ResolverName:          name,
+-			HTTPChallengeProvider: httpChallengeProvider,
+-			TLSChallengeProvider:  tlsChallengeProvider,
+-		}
+-
+-		if err := providerAggregator.AddProvider(p); err != nil {
+-			log.Error().Err(err).Str("resolver", name).Msg("The ACME resolve is skipped from the resolvers list")
+-			continue
+-		}
+-
+-		p.SetTLSManager(tlsManager)
+-
+-		p.SetConfigListenerChan(make(chan dynamic.Configuration))
+-
+-		resolvers = append(resolvers, p)
+-	}
+-
+-	return resolvers
+-}
+-
+-// initTailscaleProviders creates and registers tailscale.Provider instances corresponding to the configured Tailscale certificate resolvers.
+-func initTailscaleProviders(cfg *static.Configuration, providerAggregator *aggregator.ProviderAggregator) []*tailscale.Provider {
+-	var providers []*tailscale.Provider
+-	for name, resolver := range cfg.CertificatesResolvers {
+-		if resolver.Tailscale == nil {
+-			continue
+-		}
+-
+-		tsProvider := &tailscale.Provider{ResolverName: name}
+-
+-		if err := providerAggregator.AddProvider(tsProvider); err != nil {
+-			log.Error().Err(err).Str(logs.ProviderName, name).Msg("Unable to create Tailscale provider")
+-			continue
+-		}
+-
+-		providers = append(providers, tsProvider)
+-	}
+-
+-	return providers
+-}
+-
+ func registerMetricClients(metricsConfig *otypes.Metrics) []metrics.Registry {
+ 	if metricsConfig == nil {
+ 		return nil
+@@ -640,24 +507,6 @@
+ `)
+ 	}
+ }
+-
+-func stats(staticConfiguration *static.Configuration) {
+-	logger := log.With().Logger()
+-
+-	if staticConfiguration.Global.SendAnonymousUsage {
+-		logger.Info().Msg(`Stats collection is enabled.`)
+-		logger.Info().Msg(`Many thanks for contributing to Traefik's improvement by allowing us to receive anonymous information from your configuration.`)
+-		logger.Info().Msg(`Help us improve Traefik by leaving this feature on :)`)
+-		logger.Info().Msg(`More details on: https://doc.traefik.io/traefik/contributing/data-collection/`)
+-		collect(staticConfiguration)
 -	} else {
 -		logger.Info().Msg(`
 -Stats collection is disabled.
 -Help us improve Traefik by turning this feature on :)
 -More details on: https://doc.traefik.io/traefik/contributing/data-collection/
 -`)
- 	}
- }
+-	}
+-}
  
+ func collect(staticConfiguration *static.Configuration) {
+ 	ticker := time.Tick(24 * time.Hour)
