@@ -36,7 +36,7 @@ RUN \
     && source /opt/nvm/nvm.sh \
     && npm install -g yarn@${YARN_VERSION:?} \
     # Build Traefik Web UI. \
-    && pushd webui && yarn install && npm run build:nc && popd \
+    && pushd webui && corepack enable && yarn workspaces focus --all --production && popd \
     # Build Traefik. \
     && CGO_ENABLED=0 GOGC=off GOOS=linux \
         go build -ldflags "-s -w \
