@@ -33,11 +33,23 @@ RUN \
     && pushd /root/traefik-build \
     # Apply the patches. \
     && (find /patches -iname *.diff -print0 | sort -z | xargs -0 -r -n 1 patch -p2 -i) \
+    && popd \
     && source /opt/nvm/nvm.sh \
-    && npm install -g yarn@${YARN_VERSION:?} \
+    && npm install -g yarn@${YARN_VERSION:?} && corepack enable \
     # Build Traefik Web UI. \
-    && pushd webui && corepack enable && yarn workspaces focus --all --production && popd \
+    && export WEBUI_DIR="/webui-dist" \
+        && export VITE_APP_BASE_URL="" \
+        && export VITE_APP_BASE_API_URL="/api" \
+        && mkdir -p ${WEBUI_DIR:?} \
+        && cp /root/traefik-build/webui/{package.json,yarn.lock,.yarnrc.yml} ${WEBUI_DIR:?}/ \
+        && pushd ${WEBUI_DIR:?} \
+        && yarn workspaces focus --all --production \
+        && cp -a /root/traefik-build/webui/. ${WEBUI_DIR:?}/ \
+        && yarn build:prod \
+        && popd \
+        && cp -a ${WEBUI_DIR:?}/static/. /root/traefik-build/webui/static/ \
     # Build Traefik. \
+    && pushd /root/traefik-build \
     && CGO_ENABLED=0 GOGC=off GOOS=linux \
         go build -ldflags "-s -w \
             -X github.com/traefik/traefik/v3/pkg/version.Version=$(git describe --abbrev=0 --tags --exact-match) \
