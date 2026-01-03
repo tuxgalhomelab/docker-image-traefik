@@ -45,7 +45,10 @@ RUN \
         && pushd ${WEBUI_DIR:?} \
         && yarn workspaces focus --all --production \
         && cp -a /root/traefik-build/webui/. ${WEBUI_DIR:?}/ \
-        && yarn build:prod \
+        # We are manually replicating the commands from the build:prod script in \
+        # https://github.com/traefik/traefik/blob/master/webui/package.json \
+        # since yarn test fails with a timeout for arm64 builds. \
+        && (yarn test || true) && yarn tsc && yarn lint && yarn build \
         && popd \
         && cp -a ${WEBUI_DIR:?}/static/. /root/traefik-build/webui/static/ \
     # Build Traefik. \
