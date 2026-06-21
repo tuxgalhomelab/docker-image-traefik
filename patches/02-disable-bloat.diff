@@ -1,6 +1,6 @@
 diff -u -r -N a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
---- a/traefik/cmd/traefik/traefik.go	2025-12-31 17:56:42.171874275 -0800
-+++ b/traefik/cmd/traefik/traefik.go	2025-12-31 18:26:11.226430462 -0800
+--- a/traefik/cmd/traefik/traefik.go	2026-06-21 16:28:02.749092971 -0700
++++ b/traefik/cmd/traefik/traefik.go	2026-06-21 16:31:05.925458904 -0700
 @@ -16,7 +16,6 @@
  	"time"
  
@@ -49,17 +49,17 @@ diff -u -r -N a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
  	// Observability
  
  	metricRegistries := registerMetricClients(staticConfiguration.Metrics)
-@@ -301,8 +282,7 @@
+@@ -302,8 +283,7 @@
  	}
  
  	dialerManager := tcp.NewDialerManager(spiffeX509Source)
 -	acmeHTTPHandler := getHTTPChallengeHandler(acmeProviders, httpChallengeProvider)
--	managerFactory := service.NewManagerFactory(*staticConfiguration, routinesPool, observabilityMgr, transportManager, proxyBuilder, acmeHTTPHandler)
-+	managerFactory := service.NewManagerFactory(*staticConfiguration, routinesPool, observabilityMgr, transportManager, proxyBuilder, nil)
+-	managerFactory := service.NewManagerFactory(*staticConfiguration, routinesPool, observabilityMgr, transportManager, proxyBuilder, acmeHTTPHandler, tlsManager)
++	managerFactory := service.NewManagerFactory(*staticConfiguration, routinesPool, observabilityMgr, transportManager, proxyBuilder, nil, tlsManager)
  
  	// Router factory
  
-@@ -358,53 +338,9 @@
+@@ -359,53 +339,9 @@
  		})
  	}
  
@@ -113,7 +113,7 @@ diff -u -r -N a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
  func getDefaultsEntrypoints(staticConfiguration *static.Configuration) []string {
  	var defaultEntryPoints []string
  
-@@ -450,64 +386,6 @@
+@@ -451,64 +387,6 @@
  	}
  }
  
@@ -178,7 +178,7 @@ diff -u -r -N a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
  func registerMetricClients(metricsConfig *otypes.Metrics) []metrics.Registry {
  	if metricsConfig == nil {
  		return nil
-@@ -640,24 +518,6 @@
+@@ -641,24 +519,6 @@
  `)
  	}
  }
