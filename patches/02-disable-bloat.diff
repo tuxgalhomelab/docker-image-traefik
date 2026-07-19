@@ -90,7 +90,7 @@ diff -u -r -N a/traefik/cmd/traefik/traefik.go b/traefik/cmd/traefik/traefik.go
 -			}
 -
 -			if _, ok := resolverNames[rt.TLS.CertResolver]; !ok {
--				log.Error().Err(err).Str(logs.RouterName, rtName).Str("certificateResolver", rt.TLS.CertResolver).
+-				log.Error().Str(logs.RouterName, rtName).Str("certificateResolver", rt.TLS.CertResolver).
 -					Msg("Router uses a nonexistent certificate resolver")
 -			}
 -		}
